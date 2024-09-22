@@ -5,10 +5,26 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/WellyngtonF/WishListCLI/internal/item"
 	"github.com/gocolly/colly"
+	"github.com/spf13/viper"
+	"golang.org/x/exp/rand"
 )
+
+func init() {
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
+	viper.AddConfigPath("./config")
+
+	if err := viper.ReadInConfig(); err != nil {
+		fmt.Printf("Error reading config file: %v\n", err)
+	}
+
+	rand.Seed(uint64(time.Now().UnixNano()))
+}
 
 func ScrapePrice(item item.Item, source string) (float64, string, error) {
 	switch strings.TrimSpace(strings.ToLower(source)) {
@@ -28,6 +44,18 @@ func scrapeMercadoLivre(item item.Item) (float64, string, error) {
 		colly.AllowedDomains("www.mercadolivre.com.br", "lista.mercadolivre.com.br"),
 	)
 
+	proxyURL, username, password, err := getRandomProxy()
+	if err != nil {
+		fmt.Printf("Error getting proxy: %v\n", err)
+	} else {
+		err = c.SetProxy(fmt.Sprintf("http://%s:%s@%s", username, password, proxyURL))
+		if err != nil {
+			fmt.Printf("Error setting proxy: %v\n", err)
+		}
+	}
+
+	c.UserAgent = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0"
+
 	type Product struct {
 		Price float64
 		URL   string
@@ -40,13 +68,12 @@ func scrapeMercadoLivre(item item.Item) (float64, string, error) {
 		fmt.Println("Visiting", r.URL)
 	})
 
-	c.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-
 	c.OnError(func(r *colly.Response, err error) {
 		fmt.Println("Error:", err)
 	})
 
 	c.OnHTML("li.ui-search-layout__item", func(e *colly.HTMLElement) {
+		fmt.Println(e.Text)
 		if len(products) >= 10 {
 			return
 		}
@@ -73,7 +100,7 @@ func scrapeMercadoLivre(item item.Item) (float64, string, error) {
 		}
 	})
 
-	err := c.Visit(searchURL)
+	err = c.Visit(searchURL)
 	if err != nil {
 		return 0, "", fmt.Errorf("error visiting URL: %v", err)
 	}
@@ -83,4 +110,14 @@ func scrapeMercadoLivre(item item.Item) (float64, string, error) {
 	}
 
 	return lowestPriceProduct.Price, lowestPriceProduct.URL, nil
+}
+
+func getRandomProxy() (string, string, string, error) {
+
+	proxyURLs := viper.GetStringSlice("proxy_urls")
+	if len(proxyURLs) == 0 {
+		return "", "", "", fmt.Errorf("no proxy URLs found in config")
+	}
+
+	return proxyURLs[rand.Intn(len(proxyURLs))], viper.GetString("proxy_username"), viper.GetString("proxy_password"), nil
 }

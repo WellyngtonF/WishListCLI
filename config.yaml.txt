@@ -1,0 +1,5 @@
+proxy_urls:
+    - proxy_example1
+    - proxy_example2
+proxy_username: user
+proxy_password: pass
