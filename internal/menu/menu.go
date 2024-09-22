@@ -9,6 +9,7 @@ import (
 
 	"github.com/WellyngtonF/WishListCLI/internal/item"
 	"github.com/WellyngtonF/WishListCLI/internal/repository"
+	"github.com/WellyngtonF/WishListCLI/internal/scraper"
 )
 
 // ShowMenu displays the CLI menu for the application
@@ -38,12 +39,36 @@ func HandleMenuInput() {
 	case 4:
 		handleDeleteItem()
 	case 5:
-		fmt.Println("Web Scraping is not yet implemented.")
+		handleWebScraping()
 	case 6:
 		fmt.Println("Exiting...")
 		os.Exit(0)
 	default:
 		fmt.Println("Invalid option. Please choose again.")
+	}
+}
+
+func handleWebScraping() {
+	ListItemsNames()
+	fmt.Print("Enter the name of the item to scrape: ")
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	itemName := scanner.Text()
+
+	item, err := repository.ReadItem(itemName)
+	if err != nil {
+		fmt.Printf("Error fetching item: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Scraping prices for %s...\n", item.Name)
+	for _, source := range item.ScrapingSources {
+		price, url, err := scraper.ScrapePrice(*item, source)
+		if err != nil {
+			fmt.Printf("Error scraping %s: %v\n", source, err)
+			continue
+		}
+		fmt.Printf("%s: $%.2f - %s\n", source, price, url)
 	}
 }
 
@@ -58,16 +83,19 @@ func handleAddItem() {
 	name = scanner.Text()
 
 	fmt.Print("Enter category: ")
-	fmt.Scanln(&category)
+	scanner.Scan()
+	category = scanner.Text()
 
 	fmt.Print("Enter producer: ")
-	fmt.Scanln(&producer)
+	scanner.Scan()
+	producer = scanner.Text()
 
 	fmt.Print("Enter max price (e.g., 99.99): ")
 	fmt.Scanln(&maxPrice)
 
 	fmt.Print("Enter scraping sources (comma-separated): ")
-	fmt.Scanln(&scrapingSources)
+	scanner.Scan()
+	scrapingSources = scanner.Text()
 
 	newItem := item.Item{
 		Name:            name,
@@ -95,11 +123,30 @@ func handleViewWishlist() {
 		return
 	}
 
-	fmt.Println("===== Wishlist =====")
-	for _, itm := range items {
-		fmt.Printf("Name: %s | Category: %s | Producer: %s | Max Price: %.2f | Sources: %v\n",
-			itm.Name, itm.Category, itm.Producer, itm.MaxPrice, itm.ScrapingSources)
+	// Print table header
+	fmt.Printf("%-20s %-15s %-15s %-10s %-20s\n", "Name", "Category", "Producer", "Max Price", "Scraping Sources")
+	fmt.Println(strings.Repeat("-", 85))
+
+	// Print table rows
+	for _, item := range items {
+		fmt.Printf("%-20s %-15s %-15s $%-9.2f %-20s\n",
+			truncateString(item.Name, 20),
+			truncateString(item.Category, 15),
+			truncateString(item.Producer, 15),
+			item.MaxPrice,
+			truncateString(strings.Join(item.ScrapingSources, ", "), 20))
 	}
+
+	fmt.Println(strings.Repeat("-", 85))
+	fmt.Printf("Total items: %d\n", len(items))
+}
+
+// Helper function to truncate strings that are too long
+func truncateString(s string, maxLength int) string {
+	if len(s) <= maxLength {
+		return s
+	}
+	return s[:maxLength-3] + "..."
 }
 
 // Helper function to update an item
@@ -107,25 +154,37 @@ func handleUpdateItem() {
 	var name, category, producer, scrapingSources string
 	var maxPrice float64
 
+	scanner := bufio.NewScanner(os.Stdin)
+	ListItemsNames()
 	fmt.Print("Enter the name of the item to update: ")
-	fmt.Scanln(&name)
+	scanner.Scan()
+	name = scanner.Text()
 
 	itemToUpdate, err := repository.ReadItem(name)
+
 	if err != nil {
 		fmt.Printf("Error fetching item: %v\n", err)
 		return
 	}
 
-	fmt.Printf("Updating item: %s\n", itemToUpdate.Name)
+	fmt.Println("\nCurrent item details:")
+	fmt.Printf("Name: %s\n", itemToUpdate.Name)
+	fmt.Printf("Category: %s\n", itemToUpdate.Category)
+	fmt.Printf("Producer: %s\n", itemToUpdate.Producer)
+	fmt.Printf("Max Price: $%.2f\n", itemToUpdate.MaxPrice)
+	fmt.Printf("Scraping Sources: %s\n", strings.Join(itemToUpdate.ScrapingSources, ", "))
+	fmt.Println()
 
 	fmt.Print("Enter new category (leave blank to keep unchanged): ")
-	fmt.Scanln(&category)
+	scanner.Scan()
+	category = scanner.Text()
 	if category != "" {
 		itemToUpdate.Category = category
 	}
 
 	fmt.Print("Enter new producer (leave blank to keep unchanged): ")
-	fmt.Scanln(&producer)
+	scanner.Scan()
+	producer = scanner.Text()
 	if producer != "" {
 		itemToUpdate.Producer = producer
 	}
@@ -137,7 +196,8 @@ func handleUpdateItem() {
 	}
 
 	fmt.Print("Enter new scraping sources (leave blank to keep unchanged): ")
-	fmt.Scanln(&scrapingSources)
+	scanner.Scan()
+	scrapingSources = scanner.Text()
 	if scrapingSources != "" {
 		itemToUpdate.ScrapingSources = parseScrapingSources(scrapingSources)
 	}
@@ -155,6 +215,8 @@ func handleUpdateItem() {
 // Helper function to delete an item from the wishlist
 func handleDeleteItem() {
 	var name string
+	ListItemsNames()
+
 	fmt.Print("Enter the name of the item to delete: ")
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Scan()
@@ -166,6 +228,20 @@ func handleDeleteItem() {
 		return
 	}
 	fmt.Println("Item deleted successfully!")
+}
+
+func ListItemsNames() {
+	names, err := repository.GetItemsNames()
+	if err != nil {
+		fmt.Printf("Error fetching items: %v\n", err)
+		return
+	}
+
+	fmt.Println("Available items:")
+	for _, name := range names {
+		fmt.Println(name)
+	}
+
 }
 
 // Helper function to parse scraping sources from a comma-separated string, split and trim the values

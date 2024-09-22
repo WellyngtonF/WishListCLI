@@ -62,3 +62,16 @@ func DeleteItem(name string) error {
 func ListItems() ([]item.Item, error) {
 	return persistence.LoadItems(filePath)
 }
+
+func GetItemsNames() ([]string, error) {
+	items, err := persistence.LoadItems(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, len(items))
+	for i, itm := range items {
+		names[i] = itm.Name
+	}
+	return names, nil
+}
