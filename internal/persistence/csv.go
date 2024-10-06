@@ -76,6 +76,11 @@ func LoadItems(filePath string) ([]item.Item, error) {
 			return nil, err
 		}
 
+		minPrice, err := parseFloat(record[7])
+		if err != nil {
+			return nil, err
+		}
+
 		items = append(items, item.Item{
 			Name:            record[0],
 			Category:        record[1],
@@ -84,6 +89,7 @@ func LoadItems(filePath string) ([]item.Item, error) {
 			ScrapingSources: strings.Split(record[4], ","),
 			CreatedAt:       createdAt,
 			UpdatedAt:       updatedAt,
+			MinPrice:        minPrice,
 		})
 	}
 
@@ -110,6 +116,7 @@ func AddItem(filePath string, newItem item.Item) error {
 		strings.Join(newItem.ScrapingSources, ","),
 		formatTime(newItem.CreatedAt),
 		formatTime(newItem.UpdatedAt),
+		formatFloat(newItem.MinPrice),
 	})
 	if err != nil {
 		return err

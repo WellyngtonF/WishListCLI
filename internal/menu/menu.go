@@ -75,7 +75,7 @@ func handleWebScraping() {
 // Helper function to add an item to the wishlist
 func handleAddItem() {
 	var name, category, producer, scrapingSources string
-	var maxPrice float64
+	var maxPrice, minPrice float64
 
 	fmt.Print("Enter item name: ")
 	scanner := bufio.NewScanner(os.Stdin)
@@ -97,6 +97,9 @@ func handleAddItem() {
 	scanner.Scan()
 	scrapingSources = scanner.Text()
 
+	// Get minimum price (optional)
+	fmt.Print("Enter minimum price (e.g., 99.99): ")
+	fmt.Scanln(&minPrice)
 	newItem := item.Item{
 		Name:            name,
 		Category:        category,
@@ -105,6 +108,7 @@ func handleAddItem() {
 		ScrapingSources: parseScrapingSources(scrapingSources),
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
+		MinPrice:        minPrice,
 	}
 
 	err := repository.CreateItem(newItem)
@@ -152,7 +156,7 @@ func truncateString(s string, maxLength int) string {
 // Helper function to update an item
 func handleUpdateItem() {
 	var name, category, producer, scrapingSources string
-	var maxPrice float64
+	var maxPrice, minPrice float64
 
 	scanner := bufio.NewScanner(os.Stdin)
 	ListItemsNames()
@@ -173,6 +177,7 @@ func handleUpdateItem() {
 	fmt.Printf("Producer: %s\n", itemToUpdate.Producer)
 	fmt.Printf("Max Price: $%.2f\n", itemToUpdate.MaxPrice)
 	fmt.Printf("Scraping Sources: %s\n", strings.Join(itemToUpdate.ScrapingSources, ", "))
+	fmt.Printf("Min Price: $%.2f\n", itemToUpdate.MinPrice)
 	fmt.Println()
 
 	fmt.Print("Enter new category (leave blank to keep unchanged): ")
@@ -200,6 +205,12 @@ func handleUpdateItem() {
 	scrapingSources = scanner.Text()
 	if scrapingSources != "" {
 		itemToUpdate.ScrapingSources = parseScrapingSources(scrapingSources)
+	}
+
+	fmt.Print("Enter new minimum price (leave blank to keep unchanged): ")
+	fmt.Scanln(&minPrice)
+	if minPrice != 0 {
+		itemToUpdate.MinPrice = minPrice
 	}
 
 	itemToUpdate.UpdatedAt = time.Now()

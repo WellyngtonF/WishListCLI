@@ -13,4 +13,5 @@ type Item struct {
 	URL             string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	MinPrice        float64
 }
