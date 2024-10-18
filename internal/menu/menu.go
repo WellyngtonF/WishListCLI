@@ -1,265 +1,273 @@
 package menu
 
 import (
-	"bufio"
 	"fmt"
-	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/WellyngtonF/WishListCLI/internal/formComponents"
 	"github.com/WellyngtonF/WishListCLI/internal/item"
 	"github.com/WellyngtonF/WishListCLI/internal/repository"
-	"github.com/WellyngtonF/WishListCLI/internal/scraper"
+	"github.com/awesome-gocui/gocui"
 )
 
-// ShowMenu displays the CLI menu for the application
-func ShowMenu() {
-	fmt.Println("===== Wishlist Manager =====")
-	fmt.Println("1. Add Item to Wishlist")
-	fmt.Println("2. View Wishlist")
-	fmt.Println("3. Update Item in Wishlist")
-	fmt.Println("4. Delete Item from Wishlist")
-	fmt.Println("5. Run Web Scraping")
-	fmt.Println("6. Exit")
-	fmt.Print("Choose an option: ")
+// GetMenuText returns the menu text as a string
+func GetMenuText() string {
+	return `1. Add Item to Wishlist
+2. View Wishlist
+3. Update Item in Wishlist
+4. Delete Item from Wishlist
+5. Run Web Scraping
+6. Exit
+Choose an option:`
 }
 
-// HandleMenuInput handles the menu options selected by the user
-func HandleMenuInput() {
-	var choice int
-	fmt.Scanln(&choice)
-
-	switch choice {
-	case 1:
-		handleAddItem()
-	case 2:
-		handleViewWishlist()
-	case 3:
-		handleUpdateItem()
-	case 4:
-		handleDeleteItem()
-	case 5:
-		handleWebScraping()
-	case 6:
-		fmt.Println("Exiting...")
-		os.Exit(0)
-	default:
-		fmt.Println("Invalid option. Please choose again.")
+func GetMenuOptions() []string {
+	return []string{
+		"Add Item to Wishlist",
+		"View Wishlist",
+		"Update Item in Wishlist",
+		"Delete Item from Wishlist",
+		"Run Web Scraping",
+		"Exit",
 	}
 }
 
-func handleWebScraping() {
-	ListItemsNames()
-	fmt.Print("Enter the name of the item to scrape: ")
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	itemName := scanner.Text()
+type InputField struct {
+	name      string
+	x, y      int
+	w         int
+	maxLength int
+	label     string
+}
 
-	item, err := repository.ReadItem(itemName)
+func NewInputField(name string, x, y, w, maxLength int, label string) *InputField {
+	return &InputField{name: name, x: x, y: y, w: w, maxLength: maxLength, label: label}
+}
+
+func (i *InputField) Layout(g *gocui.Gui) error {
+	labelView, err := g.SetView(i.name+"Label", i.x, i.y, i.x+len(i.label)+1, i.y+2, 0)
 	if err != nil {
-		fmt.Printf("Error fetching item: %v\n", err)
-		return
+		if err != gocui.ErrUnknownView {
+			return err
+		}
+		labelView.Frame = false
+		fmt.Fprint(labelView, i.label)
 	}
 
-	fmt.Printf("Scraping prices for %s...\n", item.Name)
-	for _, source := range item.ScrapingSources {
-		price, url, err := scraper.ScrapePrice(*item, source)
-		if err != nil {
-			fmt.Printf("Error scraping %s: %v\n", source, err)
-			continue
+	inputView, err := g.SetView(i.name, i.x+len(i.label)+1, i.y, i.x+i.w, i.y+2, 0)
+	if err != nil {
+		if err != gocui.ErrUnknownView {
+			return err
 		}
-		fmt.Printf("%s: $%.2f - %s\n", source, price, url)
+		inputView.Editable = true
+		inputView.Editor = gocui.EditorFunc(func(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
+			if v.BufferLines()[0] == "" || len(v.BufferLines()[0]) < i.maxLength {
+				gocui.DefaultEditor.Edit(v, key, ch, mod)
+			}
+		})
 	}
+	return nil
 }
 
-// Helper function to add an item to the wishlist
-func handleAddItem() {
-	var name, category, producer, scrapingSources string
+func HandleAddItem(g *gocui.Gui, v *gocui.View) error {
+	maxX := 30
+	maxY := 0
+
+	// Create input fields
+	nameInput := formComponents.NewInputField(g, "Name", maxX, maxY, 10, 30).
+		AddValidate("Name is required", func(value string) bool {
+			return len(strings.TrimSpace(value)) > 0
+		})
+
+	categoryInput := formComponents.NewInputField(g, "Category", maxX, maxY+2, 10, 30)
+
+	producerInput := formComponents.NewInputField(g, "Producer", maxX, maxY+4, 10, 30)
+
+	maxPriceInput := formComponents.NewInputField(g, "Max Price", maxX, maxY+6, 10, 15).
+		AddValidate("Invalid price format", func(value string) bool {
+			_, err := strconv.ParseFloat(value, 64)
+			return err == nil
+		})
+
+	minPriceInput := formComponents.NewInputField(g, "Min Price", maxX, maxY+8, 10, 15).
+		AddValidate("Invalid price format", func(value string) bool {
+			_, err := strconv.ParseFloat(value, 64)
+			return err == nil
+		})
+
+	sourcesInput := formComponents.NewInputField(g, "Sources", maxX, maxY+10, 10, 40)
+
+	inputs := []*formComponents.InputField{
+		nameInput,
+		categoryInput,
+		producerInput,
+		maxPriceInput,
+		minPriceInput,
+		sourcesInput,
+	}
+
+	// Draw input fields
+	for _, input := range inputs {
+		input.Draw()
+	}
+
+	// Set initial focus
+	g.SetCurrentView("Name")
+
+	// Add handler for navigating between fields
+	nextField := func(g *gocui.Gui, v *gocui.View) error {
+		return nextView(g, inputs)
+	}
+
+	prevField := func(g *gocui.Gui, v *gocui.View) error {
+		return prevView(g, inputs)
+	}
+
+	if err := g.SetKeybinding("", gocui.KeyTab, gocui.ModNone, nextField); err != nil {
+		return err
+	}
+
+	if err := g.SetKeybinding("", gocui.KeyArrowDown, gocui.ModNone, nextField); err != nil {
+		return err
+	}
+
+	if err := g.SetKeybinding("", gocui.KeyArrowUp, gocui.ModNone, prevField); err != nil {
+		return err
+	}
+
+	// Add handler for submitting the form
+	submitHandler := func(g *gocui.Gui, v *gocui.View) error {
+		for _, input := range inputs {
+			if !input.Validate() {
+				return nil
+			}
+		}
+
+		maxPrice, _ := strconv.ParseFloat(maxPriceInput.GetFieldText(), 64)
+		minPrice, _ := strconv.ParseFloat(minPriceInput.GetFieldText(), 64)
+
+		newItem := item.Item{
+			Name:            nameInput.GetFieldText(),
+			Category:        categoryInput.GetFieldText(),
+			Producer:        producerInput.GetFieldText(),
+			MaxPrice:        maxPrice,
+			MinPrice:        minPrice,
+			ScrapingSources: strings.Split(sourcesInput.GetFieldText(), ","),
+			CreatedAt:       time.Now(),
+			UpdatedAt:       time.Now(),
+		}
+
+		err := repository.CreateItem(newItem)
+		if err != nil {
+			return fmt.Errorf("error adding item: %v", err)
+		}
+
+		// Close input fields
+		for _, input := range inputs {
+			input.Close()
+		}
+
+		g.SetCurrentView("menu")
+		return nil
+	}
+
+	// Set keybinding for form submission
+	if err := g.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, submitHandler); err != nil {
+		return err
+	}
+
+	// Set keybinding for canceling the form
+	cancelHandler := func(g *gocui.Gui, v *gocui.View) error {
+		for _, input := range inputs {
+			input.Close()
+		}
+
+		g.SetCurrentView("menu")
+		return nil
+	}
+
+	if err := g.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, cancelHandler); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func nextView(g *gocui.Gui, views []*formComponents.InputField) error {
+	currentView := g.CurrentView().Name()
+	for i, view := range views {
+		if view.GetLabel() == currentView {
+			nextIndex := (i + 1) % len(views)
+			g.SetCurrentView(views[nextIndex].GetLabel())
+			return nil
+		}
+	}
+	return nil
+}
+
+func prevView(g *gocui.Gui, views []*formComponents.InputField) error {
+	currentView := g.CurrentView().Name()
+	for i, view := range views {
+		if view.GetLabel() == currentView {
+			prevIndex := (i - 1 + len(views)) % len(views)
+			g.SetCurrentView(views[prevIndex].GetLabel())
+			return nil
+		}
+	}
+	return nil
+}
+
+func createItem(g *gocui.Gui, v *gocui.View) error {
+	var name, category, producer, maxPriceStr, minPriceStr, sources string
 	var maxPrice, minPrice float64
+	var err error
 
-	fmt.Print("Enter item name: ")
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	name = scanner.Text()
+	if v, err := g.View("name"); err == nil {
+		name = strings.TrimSpace(v.Buffer())
+	}
+	if v, err := g.View("category"); err == nil {
+		category = strings.TrimSpace(v.Buffer())
+	}
+	if v, err := g.View("producer"); err == nil {
+		producer = strings.TrimSpace(v.Buffer())
+	}
+	if v, err := g.View("maxPrice"); err == nil {
+		maxPriceStr = strings.TrimSpace(v.Buffer())
+		maxPrice, err = strconv.ParseFloat(maxPriceStr, 64)
+		if err != nil {
+			return fmt.Errorf("invalid max price: %v", err)
+		}
+	}
+	if v, err := g.View("minPrice"); err == nil {
+		minPriceStr = strings.TrimSpace(v.Buffer())
+		minPrice, err = strconv.ParseFloat(minPriceStr, 64)
+		if err != nil {
+			return fmt.Errorf("invalid min price: %v", err)
+		}
+	}
+	if v, err := g.View("sources"); err == nil {
+		sources = strings.TrimSpace(v.Buffer())
+	}
 
-	fmt.Print("Enter category: ")
-	scanner.Scan()
-	category = scanner.Text()
-
-	fmt.Print("Enter producer: ")
-	scanner.Scan()
-	producer = scanner.Text()
-
-	fmt.Print("Enter max price (e.g., 99.99): ")
-	fmt.Scanln(&maxPrice)
-
-	fmt.Print("Enter scraping sources (comma-separated): ")
-	scanner.Scan()
-	scrapingSources = scanner.Text()
-
-	// Get minimum price (optional)
-	fmt.Print("Enter minimum price (e.g., 99.99): ")
-	fmt.Scanln(&minPrice)
 	newItem := item.Item{
 		Name:            name,
 		Category:        category,
 		Producer:        producer,
 		MaxPrice:        maxPrice,
-		ScrapingSources: parseScrapingSources(scrapingSources),
+		MinPrice:        minPrice,
+		ScrapingSources: strings.Split(sources, ","),
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
-		MinPrice:        minPrice,
 	}
 
-	err := repository.CreateItem(newItem)
+	err = repository.CreateItem(newItem)
 	if err != nil {
-		fmt.Printf("Error adding item: %v\n", err)
-		return
-	}
-	fmt.Println("Item added successfully!")
-}
-
-// Helper function to view the wishlist
-func handleViewWishlist() {
-	items, err := repository.ListItems()
-	if err != nil {
-		fmt.Printf("Error loading wishlist: %v\n", err)
-		return
+		return fmt.Errorf("error adding item: %v", err)
 	}
 
-	// Print table header
-	fmt.Printf("%-20s %-15s %-15s %-10s %-20s\n", "Name", "Category", "Producer", "Max Price", "Scraping Sources")
-	fmt.Println(strings.Repeat("-", 85))
-
-	// Print table rows
-	for _, item := range items {
-		fmt.Printf("%-20s %-15s %-15s $%-9.2f %-20s\n",
-			truncateString(item.Name, 20),
-			truncateString(item.Category, 15),
-			truncateString(item.Producer, 15),
-			item.MaxPrice,
-			truncateString(strings.Join(item.ScrapingSources, ", "), 20))
-	}
-
-	fmt.Println(strings.Repeat("-", 85))
-	fmt.Printf("Total items: %d\n", len(items))
-}
-
-// Helper function to truncate strings that are too long
-func truncateString(s string, maxLength int) string {
-	if len(s) <= maxLength {
-		return s
-	}
-	return s[:maxLength-3] + "..."
-}
-
-// Helper function to update an item
-func handleUpdateItem() {
-	var name, category, producer, scrapingSources string
-	var maxPrice, minPrice float64
-
-	scanner := bufio.NewScanner(os.Stdin)
-	ListItemsNames()
-	fmt.Print("Enter the name of the item to update: ")
-	scanner.Scan()
-	name = scanner.Text()
-
-	itemToUpdate, err := repository.ReadItem(name)
-
-	if err != nil {
-		fmt.Printf("Error fetching item: %v\n", err)
-		return
-	}
-
-	fmt.Println("\nCurrent item details:")
-	fmt.Printf("Name: %s\n", itemToUpdate.Name)
-	fmt.Printf("Category: %s\n", itemToUpdate.Category)
-	fmt.Printf("Producer: %s\n", itemToUpdate.Producer)
-	fmt.Printf("Max Price: $%.2f\n", itemToUpdate.MaxPrice)
-	fmt.Printf("Scraping Sources: %s\n", strings.Join(itemToUpdate.ScrapingSources, ", "))
-	fmt.Printf("Min Price: $%.2f\n", itemToUpdate.MinPrice)
-	fmt.Println()
-
-	fmt.Print("Enter new category (leave blank to keep unchanged): ")
-	scanner.Scan()
-	category = scanner.Text()
-	if category != "" {
-		itemToUpdate.Category = category
-	}
-
-	fmt.Print("Enter new producer (leave blank to keep unchanged): ")
-	scanner.Scan()
-	producer = scanner.Text()
-	if producer != "" {
-		itemToUpdate.Producer = producer
-	}
-
-	fmt.Print("Enter new max price (leave blank to keep unchanged): ")
-	fmt.Scanln(&maxPrice)
-	if maxPrice != 0 {
-		itemToUpdate.MaxPrice = maxPrice
-	}
-
-	fmt.Print("Enter new scraping sources (leave blank to keep unchanged): ")
-	scanner.Scan()
-	scrapingSources = scanner.Text()
-	if scrapingSources != "" {
-		itemToUpdate.ScrapingSources = parseScrapingSources(scrapingSources)
-	}
-
-	fmt.Print("Enter new minimum price (leave blank to keep unchanged): ")
-	fmt.Scanln(&minPrice)
-	if minPrice != 0 {
-		itemToUpdate.MinPrice = minPrice
-	}
-
-	itemToUpdate.UpdatedAt = time.Now()
-
-	err = repository.UpdateItem(*itemToUpdate)
-	if err != nil {
-		fmt.Printf("Error updating item: %v\n", err)
-		return
-	}
-	fmt.Println("Item updated successfully!")
-}
-
-// Helper function to delete an item from the wishlist
-func handleDeleteItem() {
-	var name string
-	ListItemsNames()
-
-	fmt.Print("Enter the name of the item to delete: ")
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	name = scanner.Text()
-
-	err := repository.DeleteItem(name)
-	if err != nil {
-		fmt.Printf("Error deleting item: %v\n", err)
-		return
-	}
-	fmt.Println("Item deleted successfully!")
-}
-
-func ListItemsNames() {
-	names, err := repository.GetItemsNames()
-	if err != nil {
-		fmt.Printf("Error fetching items: %v\n", err)
-		return
-	}
-
-	fmt.Println("Available items:")
-	for _, name := range names {
-		fmt.Println(name)
-	}
-
-}
-
-// Helper function to parse scraping sources from a comma-separated string, split and trim the values
-func parseScrapingSources(sources string) []string {
-	scrapingSources := strings.Split(sources, ",")
-	for i := range scrapingSources {
-		scrapingSources[i] = strings.TrimSpace(scrapingSources[i])
-	}
-	return scrapingSources
+	g.DeleteView("addItem")
+	g.SetCurrentView("menu")
+	return nil
 }
