@@ -118,11 +118,19 @@ func HandleAddItem(g *gocui.Gui, v *gocui.View) error {
 
 	// Add handler for navigating between fields
 	nextField := func(g *gocui.Gui, v *gocui.View) error {
-		return nextView(g, inputs)
+		interfaceInputs := make([]interface{}, len(inputs))
+		for i, v := range inputs {
+			interfaceInputs[i] = v
+		}
+		return nextView(g, interfaceInputs)
 	}
 
 	prevField := func(g *gocui.Gui, v *gocui.View) error {
-		return prevView(g, inputs)
+		interfaceInputs := make([]interface{}, len(inputs))
+		for i, v := range inputs {
+			interfaceInputs[i] = v
+		}
+		return prevView(g, interfaceInputs)
 	}
 
 	if err := g.SetKeybinding("", gocui.KeyTab, gocui.ModNone, nextField); err != nil {
@@ -136,6 +144,17 @@ func HandleAddItem(g *gocui.Gui, v *gocui.View) error {
 	if err := g.SetKeybinding("", gocui.KeyArrowUp, gocui.ModNone, prevField); err != nil {
 		return err
 	}
+
+	// Create submit button
+	submitButton := formComponents.NewButton(g, "Submit", maxX, maxY+12, 10)
+	submitButton.Draw()
+
+	// Create a separate slice for all components
+	allComponents := make([]interface{}, 0, len(inputs)+1)
+	for _, input := range inputs {
+		allComponents = append(allComponents, input)
+	}
+	allComponents = append(allComponents, submitButton)
 
 	// Add handler for submitting the form
 	submitHandler := func(g *gocui.Gui, v *gocui.View) error {
@@ -173,8 +192,9 @@ func HandleAddItem(g *gocui.Gui, v *gocui.View) error {
 		return nil
 	}
 
-	// Set keybinding for form submission
-	if err := g.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, submitHandler); err != nil {
+	if err := g.SetKeybinding("Submit", gocui.MouseLeft, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		return submitHandler(g, v)
+	}); err != nil {
 		return err
 	}
 
@@ -195,24 +215,48 @@ func HandleAddItem(g *gocui.Gui, v *gocui.View) error {
 	return nil
 }
 
-func nextView(g *gocui.Gui, views []*formComponents.InputField) error {
+func nextView(g *gocui.Gui, components []interface{}) error {
 	currentView := g.CurrentView().Name()
-	for i, view := range views {
-		if view.GetLabel() == currentView {
-			nextIndex := (i + 1) % len(views)
-			g.SetCurrentView(views[nextIndex].GetLabel())
+	for i, comp := range components {
+		var label string
+		switch v := comp.(type) {
+		case *formComponents.InputField:
+			label = v.GetLabel()
+		case *formComponents.Button:
+			label = v.GetLabel()
+		}
+		if label == currentView {
+			nextIndex := (i + 1) % len(components)
+			g.SetCurrentView(getLabel(components[nextIndex]))
 			return nil
 		}
 	}
 	return nil
 }
 
-func prevView(g *gocui.Gui, views []*formComponents.InputField) error {
+func getLabel(component interface{}) string {
+	switch v := component.(type) {
+	case *formComponents.InputField:
+		return v.GetLabel()
+	case *formComponents.Button:
+		return v.GetLabel()
+	}
+	return ""
+}
+
+func prevView(g *gocui.Gui, components []interface{}) error {
 	currentView := g.CurrentView().Name()
-	for i, view := range views {
-		if view.GetLabel() == currentView {
-			prevIndex := (i - 1 + len(views)) % len(views)
-			g.SetCurrentView(views[prevIndex].GetLabel())
+	for i, comp := range components {
+		var label string
+		switch v := comp.(type) {
+		case *formComponents.InputField:
+			label = v.GetLabel()
+		case *formComponents.Button:
+			label = v.GetLabel()
+		}
+		if label == currentView {
+			prevIndex := (i - 1 + len(components)) % len(components)
+			g.SetCurrentView(getLabel(components[prevIndex]))
 			return nil
 		}
 	}
